@@ -6,6 +6,7 @@ PUSH_BRANCHES=false
 CREATE_PRS=false
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BRANCH_SUFFIX=""
+CREATED_BRANCHES=()
 
 usage() {
   printf '%s\n' \
@@ -112,6 +113,19 @@ prepare_branch() {
   git switch -c "$branch" >/dev/null
 }
 
+prepare_new_module() {
+  local branch="$1"
+  local source_file="$2"
+  local test_file="$3"
+
+  git switch "$BASE_BRANCH" >/dev/null
+  if [[ -e "$source_file" || -e "$test_file" ]]; then
+    printf 'SKIP %-39s module already exists on %s\n' "$branch" "$BASE_BRANCH"
+    return 1
+  fi
+  prepare_branch "$branch"
+}
+
 finish_branch() {
   local branch="$1"
   local commit_message="$2"
@@ -130,8 +144,10 @@ finish_branch() {
   local staged_files
   staged_files="$(git diff --cached --name-only)"
   if [[ -z "$staged_files" ]]; then
-    printf 'Branch %s has no staged changes.\n' "$branch" >&2
-    exit 1
+    git switch "$BASE_BRANCH" >/dev/null
+    git branch -D "$branch" >/dev/null
+    printf 'SKIP %-39s no content change\n' "$branch"
+    return 0
   fi
   if printf '%s\n' "$staged_files" | grep -Eq "$GENERATED_PATH_PATTERN"; then
     printf 'Refusing to commit generated files on %s:\n%s\n' \
@@ -139,6 +155,7 @@ finish_branch() {
     exit 1
   fi
   git commit -m "$commit_message" >/dev/null
+  CREATED_BRANCHES+=("$branch")
 
   if $PUSH_BRANCHES; then
     git push -u origin "$branch"
@@ -154,7 +171,10 @@ finish_branch() {
 }
 
 required_fields_branch="fix/required-webhook-fields${BRANCH_SUFFIX}"
-prepare_branch "$required_fields_branch"
+if prepare_new_module \
+  "$required_fields_branch" \
+  src/event_normalizer/required_fields.py \
+  tests/test_required_fields.py; then
 cat > src/event_normalizer/required_fields.py <<'PY'
 from collections.abc import Mapping
 from typing import Any
@@ -195,9 +215,13 @@ finish_branch \
   "Adds reusable required-field validation and regression tests." \
   src/event_normalizer/required_fields.py \
   tests/test_required_fields.py
+fi
 
 aliases_branch="feat/event-type-aliases${BRANCH_SUFFIX}"
-prepare_branch "$aliases_branch"
+if prepare_new_module \
+  "$aliases_branch" \
+  src/event_normalizer/aliases.py \
+  tests/test_aliases.py; then
 cat > src/event_normalizer/aliases.py <<'PY'
 from collections.abc import Mapping
 
@@ -253,9 +277,13 @@ finish_branch \
   "Adds version and provider alias normalization without changing unknown event types." \
   src/event_normalizer/aliases.py \
   tests/test_aliases.py
+fi
 
 batch_branch="feat/batch-normalization${BRANCH_SUFFIX}"
-prepare_branch "$batch_branch"
+if prepare_new_module \
+  "$batch_branch" \
+  src/event_normalizer/batch.py \
+  tests/test_batch.py; then
 cat > src/event_normalizer/batch.py <<'PY'
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -315,9 +343,13 @@ finish_branch \
   "Adds ordered batch normalization with duplicate identifier protection." \
   src/event_normalizer/batch.py \
   tests/test_batch.py
+fi
 
 source_policy_branch="feat/source-allowlist-policy${BRANCH_SUFFIX}"
-prepare_branch "$source_policy_branch"
+if prepare_new_module \
+  "$source_policy_branch" \
+  src/event_normalizer/source_policy.py \
+  tests/test_source_policy.py; then
 cat > src/event_normalizer/source_policy.py <<'PY'
 from collections.abc import Collection, Mapping
 from typing import Any
@@ -366,9 +398,13 @@ finish_branch \
   "Adds case-insensitive source policy enforcement and tests." \
   src/event_normalizer/source_policy.py \
   tests/test_source_policy.py
+fi
 
 routing_branch="feat/event-routing${BRANCH_SUFFIX}"
-prepare_branch "$routing_branch"
+if prepare_new_module \
+  "$routing_branch" \
+  src/event_normalizer/routing.py \
+  tests/test_routing.py; then
 cat > src/event_normalizer/routing.py <<'PY'
 from collections.abc import Mapping
 from typing import Any
@@ -432,9 +468,13 @@ finish_branch \
   "Adds deterministic routing by normalized event type with a default destination." \
   src/event_normalizer/routing.py \
   tests/test_routing.py
+fi
 
 redaction_branch="feat/sensitive-field-redaction${BRANCH_SUFFIX}"
-prepare_branch "$redaction_branch"
+if prepare_new_module \
+  "$redaction_branch" \
+  src/event_normalizer/redaction.py \
+  tests/test_redaction.py; then
 cat > src/event_normalizer/redaction.py <<'PY'
 from collections.abc import Collection, Mapping
 from typing import Any
@@ -498,9 +538,13 @@ finish_branch \
   "Adds non-mutating, case-insensitive redaction for webhook secrets." \
   src/event_normalizer/redaction.py \
   tests/test_redaction.py
+fi
 
 fingerprint_branch="feat/event-fingerprints${BRANCH_SUFFIX}"
-prepare_branch "$fingerprint_branch"
+if prepare_new_module \
+  "$fingerprint_branch" \
+  src/event_normalizer/fingerprint.py \
+  tests/test_fingerprint.py; then
 cat > src/event_normalizer/fingerprint.py <<'PY'
 import hashlib
 import json
@@ -548,9 +592,13 @@ finish_branch \
   "Adds canonical SHA-256 fingerprints for idempotency and audit correlation." \
   src/event_normalizer/fingerprint.py \
   tests/test_fingerprint.py
+fi
 
 retry_branch="feat/delivery-retry-policy${BRANCH_SUFFIX}"
-prepare_branch "$retry_branch"
+if prepare_new_module \
+  "$retry_branch" \
+  src/event_normalizer/retry_policy.py \
+  tests/test_retry_policy.py; then
 cat > src/event_normalizer/retry_policy.py <<'PY'
 from event_normalizer.errors import InvalidEventError
 
@@ -593,9 +641,13 @@ finish_branch \
   "Adds validated exponential backoff with a deterministic maximum delay." \
   src/event_normalizer/retry_policy.py \
   tests/test_retry_policy.py
+fi
 
 partition_branch="feat/event-partitioning${BRANCH_SUFFIX}"
-prepare_branch "$partition_branch"
+if prepare_new_module \
+  "$partition_branch" \
+  src/event_normalizer/partitioning.py \
+  tests/test_partitioning.py; then
 cat > src/event_normalizer/partitioning.py <<'PY'
 import hashlib
 from collections.abc import Mapping
@@ -638,9 +690,13 @@ finish_branch \
   "Adds deterministic partition selection for parallel webhook processing." \
   src/event_normalizer/partitioning.py \
   tests/test_partitioning.py
+fi
 
 expiration_branch="feat/event-expiration${BRANCH_SUFFIX}"
-prepare_branch "$expiration_branch"
+if prepare_new_module \
+  "$expiration_branch" \
+  src/event_normalizer/expiration.py \
+  tests/test_expiration.py; then
 cat > src/event_normalizer/expiration.py <<'PY'
 from datetime import datetime, timedelta, timezone
 
@@ -696,21 +752,19 @@ finish_branch \
   "Adds timezone-aware TTL checks for rejecting stale webhook deliveries." \
   src/event_normalizer/expiration.py \
   tests/test_expiration.py
+fi
 
 git switch "$BASE_BRANCH" >/dev/null
-printf '\nAll maintenance branches were created from %s.\n' "$BASE_BRANCH"
-printf '%s\n' \
-  'Recommended merge and scan order:' \
-  "  01. $required_fields_branch" \
-  "  02. $aliases_branch" \
-  "  03. $batch_branch" \
-  "  04. $source_policy_branch" \
-  "  05. $routing_branch" \
-  "  06. $redaction_branch" \
-  "  07. $fingerprint_branch" \
-  "  08. $retry_branch" \
-  "  09. $partition_branch" \
-  "  10. $expiration_branch"
+printf '\nCreated %s maintenance branch(es) from %s.\n' \
+  "${#CREATED_BRANCHES[@]}" "$BASE_BRANCH"
+if [[ ${#CREATED_BRANCHES[@]} -gt 0 ]]; then
+  printf 'Recommended merge and scan order:\n'
+  branch_number=1
+  for created_branch in "${CREATED_BRANCHES[@]}"; do
+    printf '  %02d. %s\n' "$branch_number" "$created_branch"
+    branch_number=$((branch_number + 1))
+  done
+fi
 if ! $PUSH_BRANCHES; then
   printf 'Branches are local only. Re-run in a fresh clone with --push or push them manually.\n'
 fi
